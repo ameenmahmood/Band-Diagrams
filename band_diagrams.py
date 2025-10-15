@@ -320,10 +320,10 @@ def compute_msj_doped_with_bending(
     x_s_nm, psi_x, W_cm, _ = _depletion_profile(sp.Ks, N_cm3, dop_type, Vbi_eV, Ls_nm, npts)
     
     # Image force lowering correction
-    delta_phi = image_force_lowering(sp.Ks, N_cm3, W_cm)
+    IFBL = image_force_lowering(sp.Ks, N_cm3, W_cm)
 
     # Corrected barrier heights
-    phiBn_corr = phiBn - delta_phi
+    phiBn_corr = phiBn - IFBL
     phiBp_corr = sp.Eg_eV - phiBn_corr
 
     # Bend bands with Ec(x) = Ec0 - psi(x), etc. (psi in V; energies in eV)
@@ -348,7 +348,7 @@ def compute_msj_doped_with_bending(
         "phi_Bn_ideal": phiBn, "phi_Bp_ideal": phiBp,
         "Vbi_eV": Vbi_eV, "W_cm": W_cm,
         "metal": metal, "semi": semi, "dop_type": dop_type, "N_cm3": N_cm3,"phi_Bn_corr": phiBn_corr, "phi_Bp_corr": phiBp_corr, 
-        "delta_phi": delta_phi, "W_nm": W_nm, "Eoo": Eoo, "regime_class": regime_class,
+        "IFBL": IFBL, "W_nm": W_nm, "Eoo": Eoo, "regime_class": regime_class,
     }
 
 def compute_msj_intrinsic(

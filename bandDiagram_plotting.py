@@ -24,9 +24,9 @@ SETTINGS = {
     "doping_points": 13,        # number of points for the sweep
 
     # Which plots to show
-    "show_intrinsic_plot": True,
-    "show_overlay_plot":  False, # overlay Ec/Ev for three sample dopings
-    "overlay_dopings_cm3": (1e16, 1e18, 1e20), # doping values to overlay
+    "show_intrinsic_plot": False,
+    "show_overlay_plot":  True, # overlay Ec/Ev for three sample dopings
+    "overlay_dopings_cm3": (1e16, 1e18), # doping values to overlay
     "show_delta_vs_doping": False,
 
     # Band bending
@@ -44,7 +44,7 @@ SETTINGS = {
     # labeling for delta vs doping (optional)
     "delta_vs_doping_labels": {
     "Delta": "Δ = Φ_S - Φ_M (eV)",
-    "delta_phi": "Δφ (image-force lowering, eV)",
+    "IFBL": "IFBL (eV)",
     "phi_Bn_corr": "φ_Bn (corrected, eV)",
     "phi_Bn_ideal": "φ_Bn (ideal, eV)",
     "W_nm": "Depletion width (nm)",
@@ -57,11 +57,11 @@ SETTINGS = {
     "npts": 400, # total points (metal + semiconductor)
     
     # show legend 
-    "show_legend": False,
+    "show_legend": True,
     
     # font size
     "font_sizes": {
-        "title":40,
+        "title":20,
         "axis": 16,
         "ticks": 12,
         "legend": 12,
@@ -69,7 +69,10 @@ SETTINGS = {
     },
     
     # line width 
-    "line_wdith": 3
+    "line_wdith": 3,
+    
+    # show IFBL 
+    "show_ifbl": False,
 } 
 
 # --- Helper functions ---
@@ -282,16 +285,18 @@ def overlay_band_diagrams_by_doping(
             
             # Grab the barrier corrections (image lowering)  
             phiBn_corr = d.get("phi_Bn_corr")
-            delta_phi  = d.get("delta_phi")
+            IFBL  = d.get("IFBL")
 
             # Optional: annotate the interface with Δφ
-            fig.add_trace(go.Scatter(
-            x=[x_s[0]], y=[y_ec[0]], mode="markers+text",
-            text=[f"Δφ={delta_phi:.2f} eV"],
-            textposition="top center",
-            name=f"Barrier lowering (N={float(N):.1e})",
-            marker=dict(symbol="circle", size=6, color="black")
-        ))
+            if SETTINGS.get("show_ifbl", True) and (IFBL is not None):
+                fig.add_trace(go.Scatter(
+                x=[x_s[0]], y=[y_ec[0]], mode="markers+text",
+                text=[f"Δφ_B={IFBL:.2f} eV"],
+                textposition="top center",
+                name=f"Barrier lowering (N={float(N):.1e})",
+                marker=dict(symbol="circle", size=6, color="black"),
+                showlegend=SETTINGS.get("show_legend", True)
+            ))
 
         else:
             d = compute_msj_doped(
