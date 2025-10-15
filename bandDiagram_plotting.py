@@ -21,21 +21,19 @@ SETTINGS = {
     "doping_scale": "log",      # "log" or "lin"
     "doping_min_cm3": 1e13,     # range start
     "doping_max_cm3": 1e20,     # range end
-    "doping_points": 13,        # number of points for the sweep
+    "doping_points": 20,        # number of points for the sweep
 
     # Which plots to show
     "show_intrinsic_plot": False,
-    "show_overlay_plot":  True, # overlay Ec/Ev for three sample dopings
+    "show_overlay_plot":  False, # overlay Ec/Ev for three sample dopings
     "overlay_dopings_cm3": (1e16, 1e18), # doping values to overlay
-    "show_delta_vs_doping": False,
+    "show_delta_vs_doping": True,
 
     # Band bending
     "use_band_bending": True,   # True, False
     
     # what metrics to plot vs doping in plot 3 (see return in compute_msj_doped_with_bending for options)
     "delta_vs_doping_metrics": [
-    "Delta",               
-    "phi_S",
     "W_nm",
     "regime_class",  
     
@@ -47,14 +45,14 @@ SETTINGS = {
     "IFBL": "IFBL (eV)",
     "phi_Bn_corr": "φ_Bn (corrected, eV)",
     "phi_Bn_ideal": "φ_Bn (ideal, eV)",
-    "W_nm": "Depletion width (nm)",
+    "W_nm": "Depletion width",
     
     },
 
     # geometry/resolution
     "L_metal_nm": 10.0, # metal side extent (nm)
     "L_sc_nm": 100.0, # semiconductor side extent (nm)
-    "npts": 400, # total points (metal + semiconductor)
+    "npts": 600, # total points (metal + semiconductor)
     
     # show legend 
     "show_legend": True,
@@ -72,7 +70,20 @@ SETTINGS = {
     "line_wdith": 3,
     
     # show IFBL 
-    "show_ifbl": False,
+    "show_ifbl": True, 
+    
+    # Unit labels per metric key (defaults to "value" if missing)
+    "metric_yaxis": {
+        "W_nm": "nm",
+        "Wd_nm": "nm",
+        "phi_Bn_corr": "eV",
+        "phi_Bn_ideal": "eV",
+        "Delta": "eV",
+        "delta_phi": "eV",
+        "Emax_MVcm": "MV/cm",
+        "regime_class": "kT/Eoo",   # no unit
+        # add more as needed
+    },
 } 
 
 # --- Helper functions ---
@@ -291,7 +302,7 @@ def overlay_band_diagrams_by_doping(
             if SETTINGS.get("show_ifbl", True) and (IFBL is not None):
                 fig.add_trace(go.Scatter(
                 x=[x_s[0]], y=[y_ec[0]], mode="markers+text",
-                text=[f"Δφ_B={IFBL:.2f} eV"],
+                text=[f"IFBL={IFBL:.2f} eV"],
                 textposition="top center",
                 name=f"Barrier lowering (N={float(N):.1e})",
                 marker=dict(symbol="circle", size=6, color="black"),
@@ -356,114 +367,136 @@ def plot_delta_vs_doping(
     npts: int,
 ) -> go.Figure:
     """
-    User-controlled curves vs doping N.
-
-    The list of metrics to plot is taken from SETTINGS["delta_vs_doping_metrics"].
-    For each metric m:
-      1) If m is a column in the DataFrame returned by sweep_doping(...),
-         we use that column directly.
-      2) Otherwise we compute it pointwise from compute_msj_doped_with_bending(...).
+    Plot selected scalar metrics vs doping with multi-y-axis support.
+    User chooses metrics in SETTINGS["delta_vs_doping_metrics"] and assigns
+    y-axis labels in SETTINGS["metric_yaxis"].
+    Metrics with the same label share the same y-axis.
     """
-    # 1) Run the sweep once to get dataframe-based metrics
-    df = sweep_doping(
-        Ns_cm3.tolist(), dop_type, metal, semi,
-        Lm_nm=Lm_nm, Ls_nm=Ls_nm, npts=npts
-    )
+    xN = np.asarray(Ns_cm3, dtype=float)
 
-    # Ensure numeric x for plotting (and preserve user’s x scale choice outside)
-    xN = np.array(df["N_cm3"], dtype=float)
+    # compute once per doping
+    cache = [
+        compute_msj_doped_with_bending(metal, semi, dop_type, float(N), Lm_nm, Ls_nm, npts)
+        for N in xN
+    ]
 
-    # 2) Prepare figure
+    want      = [str(k).strip() for k in SETTINGS.get("delta_vs_doping_metrics", ["Delta", "delta_phi"])]
+    labels    = SETTINGS.get("delta_vs_doping_labels", {})
+    axis_map  = SETTINGS.get("metric_yaxis", {})  # metric -> axis label (e.g., "eV", "nm")
+
     fig = go.Figure()
-    want = SETTINGS.get("delta_vs_doping_metrics", ["Delta_eV", "delta_phi"])
-    labels = SETTINGS.get("delta_vs_doping_labels", {})
+    any_added = False
 
-    # Helper: try dataframe first, else compute pointwise
-    def _series_for_metric(metric: str) -> tuple[np.ndarray | None, str]:
-        # Case A: metric found directly in df
-        if metric in df.columns:
-            y = np.array(df[metric], dtype=float)
-            return y, labels.get(metric, metric)
+    # Collect unique axis labels in order of first use
+    axis_labels_ordered: list[str] = []
 
-        # Case B: compute per-doping using the bending-aware solver
-        values = []
-        ok = True
-        for N in xN:
-            try:
-                d = compute_msj_doped_with_bending(
-                    metal, semi, dop_type, float(N), Lm_nm, Ls_nm, npts
-                )
-                if metric in d:
-                    values.append(float(d[metric]))
-                elif metric == "delta_phi" and "delta_phi" in d:
-                    values.append(float(d["delta_phi"]))
-                else:
-                    ok = False
-                    break
-            except Exception:
-                ok = False
-                break
+    # Build and add traces
+    for key in want:
+        yvals = []
+        for d in cache:
+            if key in d:
+                val = d[key]
+            elif key == "W_nm" and ("W_cm" in d):
+                val = float(d["W_cm"]) * 1e7  # cm -> nm convenience
+            else:
+                val = None
 
-        if ok and values:
-            return np.array(values, dtype=float), labels.get(metric, metric)
+            if isinstance(val, (int, float, np.integer, np.floating)):
+                yvals.append(float(val))
+            else:
+                yvals = []
+                break  # skip metric if any value missing/non-numeric
 
-        # Not available—silently skip
-        return None, labels.get(metric, metric)
+        if not yvals:
+            continue
 
-    # 3) Add one trace per requested metric (skip those that arent provide)
-    added_any = False
-    for m in want:
-        y, name = _series_for_metric(m)
-        if y is not None:
-            fig.add_trace(go.Scatter(
-                x=xN, y=y, mode="lines+markers", name=name
-            ))
-            added_any = True
+        # which y-axis label does this metric use?
+        axis_label = axis_map.get(key, "Value")
+        if axis_label not in axis_labels_ordered:
+            axis_labels_ordered.append(axis_label)
 
-    # 4) Always add Δφ if user asked for it but it wasn't in df and not computed
-    # (handled by _series_for_metric already, so nothing extra needed)
+        # assign to y, y2, y3...
+        axis_idx = axis_labels_ordered.index(axis_label)
+        yaxis_name = "y" if axis_idx == 0 else f"y{axis_idx+1}"
 
-    # 5) Layout
-    if not added_any:
-        # Fallback: add Δ as at least one series if everything else failed
-        if "Delta_eV" in df.columns:
-            fig.add_trace(go.Scatter(
-                x=xN, y=df["Delta_eV"], mode="lines+markers",
-                name=labels.get("Delta_eV", "Δ = Φ_S − Φ_M (eV)")
-            ))
+        name = labels.get(key, key) + f" [{axis_label}]"
+        fig.add_trace(go.Scatter(
+            x=xN, y=np.asarray(yvals, float),
+            mode="lines+markers", name=name,
+            yaxis=yaxis_name
+        ))
+        any_added = True
 
-    # Update the layout of the figure with titles and annotations
+    if not any_added:
+        fig.add_trace(go.Scatter(x=xN, y=np.zeros_like(xN),
+                                 mode="lines+markers", name="(no valid metrics)"))
+
+    # ---- styling (same as your other plots) ----
     fs = SETTINGS.get("font_sizes", {})
     lw = SETTINGS.get("line_wdith", 2)
-    showlegend = SETTINGS.get("show_legend", True)
     fig.update_traces(line=dict(width=lw))
     fig.update_layout(
-        showlegend = SETTINGS.get("show_legend", True),
-        title=(f"{metal.value} | {semi.value}: Selected metrics vs doping "
-               f"({dop_type}-type, 300 K)"),
+        showlegend=SETTINGS.get("show_legend", True),
+        title=f"{metal.value} | {semi.value}: Selected metrics vs doping ({dop_type}-type, 300 K)",
         xaxis_type="log",
         xaxis_title="Doping N (cm⁻³)",
-        yaxis_title="Value",
+        yaxis_title=axis_labels_ordered[0] if axis_labels_ordered else "Value",
         template="plotly_white",
         legend=dict(
             yanchor="top", y=0.99, xanchor="left", x=0.01,
             font=dict(size=fs.get("legend", 12))
         ),
-        # global/base fonts
         font=dict(size=fs.get("ticks", 12)),
         title_font=dict(size=fs.get("title", 18)),
-        # axis fonts (titles + ticks)
         xaxis=dict(
-            title=dict(text="Position x (nm)", font=dict(size=fs.get("axis", 14))),
+            title=dict(text="Doping N (cm⁻³)", font=dict(size=fs.get("axis", 14))),
             tickfont=dict(size=fs.get("ticks", 12))
         ),
-        yaxis=dict(
-            title=dict(text="Energy (eV, vacuum = 0 on metal side)", font=dict(size=fs.get("axis", 14))),
-            tickfont=dict(size=fs.get("ticks", 12))
+        yaxis=dict(  # primary left axis
+            title=dict(text=axis_labels_ordered[0] if axis_labels_ordered else "Value",
+                       font=dict(size=fs.get("axis", 14))),
+            tickfont=dict(size=fs.get("ticks", 12)),
+            rangemode="tozero"
         ),
     )
-    return fig
 
+    # Define extra right-side axes for remaining labels
+    if len(axis_labels_ordered) > 1:
+        # space extra axes slightly to the left of the right edge
+        positions = np.linspace(1.0, 0.86, num=len(axis_labels_ordered)-1)
+        for i, lab in enumerate(axis_labels_ordered[1:], start=2):
+            fig.update_layout({
+                f"yaxis{i}": dict(
+                    title=dict(text=lab, font=dict(size=fs.get("axis", 14))),
+                    tickfont=dict(size=fs.get("ticks", 12)),
+                    overlaying="y",
+                    side="right",
+                    position=float(positions[i-2]),
+                    rangemode="tozero"
+                )
+            })
+
+    # Optional grid toggle
+    g = SETTINGS.get("grid", None)
+    if isinstance(g, bool):
+        fig.update_xaxes(showgrid=g); fig.update_yaxes(showgrid=g)
+    elif isinstance(g, dict):
+        fig.update_xaxes(
+            showgrid=g.get("x", True),
+            gridwidth=g.get("width", 1),
+            gridcolor=g.get("color", "rgba(0,0,0,0.15)"),
+            griddash=g.get("dash", None),
+            minor=dict(showgrid=g.get("minor", False))
+        )
+        fig.update_yaxes(
+            showgrid=g.get("y", True),
+            gridwidth=g.get("width", 1),
+            gridcolor=g.get("color", "rgba(0,0,0,0.15)"),
+            griddash=g.get("dash", None),
+            minor=dict(showgrid=g.get("minor", False))
+        )
+
+    return fig
 
 # ===== MAIN SCRIPT =====
 if __name__ == "__main__":
