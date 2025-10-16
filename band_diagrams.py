@@ -10,16 +10,21 @@ import numpy.typing as npt
 @dataclass(frozen=True)
 class Constants:
     hbar: float = 1.054571817e-34   # [J*s] (B15)
-    k: float    = 1.3806503e-23     # [J/K] (B16)
+    h_eV: float = 4.135667696e-15  # [eV*s] (B15)
+    h_j: float = 6.62607015e-34      # [J*s] (B15)
+    #k: float    = 1.3806503e-23     # [J/K] (B16)
     q: float    = 1.61e-19          # [C] (B17)
+    k_eV: float     = 8.617333e-5        # [eV/K] (B16)
+    k_j: float     = 1.380649e-23       # [J/K] (B16)
+    # q: float = 1
     T: float    = 300.0             # [K] (B18)
     p: float    = 5.95519e-09       # [ohm*cm^2]  (B19 in sheet used later as a prefactor)
     eps0: float = 8.854e-14         # [F/cm] (B21)
     ti: float = 1.0e-7          # interface thickness [cm] (B10)
     Ki: float = 8.0               # interface dielectric constant [unitless] (A11)
     Nss: float = 1.0e12           # [#/(eV*cm^2)]  (B13)
-    darpa_phase1 = 0.00002
-    darpa_phase2 = 0.000002
+    mass_e: float = 9.10938356e-31  # electron mass [kg]
+    Vt = k_j * T / q  # Thermal voltage [eV] at temperature T
 # Create an instance of Constants for easy access
 c = Constants()
 
@@ -136,7 +141,7 @@ def effective_dos(mstar_over_m0: float, T: float) -> float:
     Nc or Nv [cm^-3] using:
         N = 2.51e19 * (mT/300)^1.5
     """
-    val_m3 = 2.51e19 * (mstar_over_m0 * T / 300.0) ** 1.5
+    val_m3 = (2 * ((2* np.pi * c.mass_e * c.k_j * c.T)/(c.h_j)**2)**1.5) * (mstar_over_m0 * T / 300.0) ** 1.5
     return float(val_m3)   # cm^-3
 
 # material effective densities of states
@@ -155,7 +160,7 @@ def intrinsic_levels(chi_eV: float, Eg_eV: float, Nc: float, Nv: float) -> Tuple
     Ec = -chi_eV
     Ev = Ec - Eg_eV
     # intrinsic level formula: Ei = (Ec + Ev)/2 + (kT/2q) * ln(Nv/Nc)
-    Ei_offset = (c.k * c.T * 0.5 / c.q) * np.log(max(Nv, 1e-300)/max(Nc, 1e-300))
+    Ei_offset = (c.k_eV * c.T * 0.5) * np.log(max(Nv, 1e-300)/max(Nc, 1e-300))
     Ei = (Ec + Ev)/2 + Ei_offset
     return Ec, Ev, Ei
 
@@ -222,8 +227,7 @@ def image_force_lowering(Ks: float, N_cm3: float, W_cm: float) -> float:
 
 def intrinsic_ni(Eg_eV: float, Nc: float, Nv: float) -> float:
     """Intrinsic carrier concentration [cm^-3] using Eg (eV), Nc, Nv at the same T."""
-    Vt = (c.k * c.T) / c.q  # ≈ 0.02585 eV at 300 K
-    return (Nc * Nv) ** 0.5 * np.exp(-Eg_eV / (2 * Vt))
+    return (Nc * Nv) ** 0.5 * np.exp(-Eg_eV / (2 * c.Vt))
 
 
 # --- Semiconductor work functions ---
@@ -231,7 +235,7 @@ def semiconductor_work_function_intrinsic(chi_eV: float, Eg_eV: float, Nc: float
     """
     Phi_S(int) = chi + Eg/2 - (kT/2q) * ln(Nc/Nv)
     """
-    correction = (c.k * c.T / (2.0 * c.q)) * np.log(max(Nv,1e-300)/max(Nc,1e-300))
+    correction = (c.k_eV * c.T / (2.0)) * np.log(max(Nv,1e-300)/max(Nc,1e-300))
     return chi_eV + 0.5 * Eg_eV - correction
 
 def semiconductor_work_function_doped(
@@ -251,16 +255,15 @@ def semiconductor_work_function_doped(
         Nv = effective_dos(mp_over_m0, c.T)
 
     # Thermal voltage
-    Vt = (c.k * c.T) / c.q
     Ec, Ev, Ei = intrinsic_levels(chi_eV, Eg_eV, Nc=Nc, Nv=Nv)
     ni = intrinsic_ni(Eg_eV, Nc, Nv)
 
     if dop_type.lower().startswith("n"):
         # fermi level shift for n-type doping
-        dE = Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))      # EF - Ei
+        dE = c.Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))      # EF - Ei
     else:
         # fermi level shift for p-type doping
-        dE = -Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))     # EF - Ei
+        dE = -c.Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))     # EF - Ei
 
     EF = Ei + dE
     Phi_S = -EF
@@ -308,13 +311,12 @@ def compute_msj_doped_with_bending(
     phiBp = sp.Eg_eV - phiBn                  # p-type hole barrier (Eg - phiBn)
  
     # Built-in potential (depletion approx)
-    Vt = (c.k * c.T) / c.q
     if dop_type.lower().startswith("n"):
         # n type Vbi 
-        Vbi_eV = max(0.0, phiBn + Vt * np.log(max(N_cm3, 1.0) / max(Nc_S, 1e-300)))
+        Vbi_eV = max(0.0, phiBn + c.Vt * np.log(max(N_cm3, 1.0) / max(Nc_S, 1e-300)))
     else:
         # p type Vbi
-        Vbi_eV = max(0.0, phiBp + Vt * np.log(max(N_cm3, 1.0) / max(Nv_S, 1e-300)))
+        Vbi_eV = max(0.0, phiBp + c.Vt * np.log(max(N_cm3, 1.0) / max(Nv_S, 1e-300)))
 
     # Solve Poisson in depletion region to get psi(x) on semiconductor side
     x_s_nm, psi_x, W_cm, _ = _depletion_profile(sp.Ks, N_cm3, dop_type, Vbi_eV, Ls_nm, npts)
@@ -336,8 +338,8 @@ def compute_msj_doped_with_bending(
     W_nm = W_cm * 1e7  # cm -> nm
     
     # contact resistance
-    Eoo = 0.0000000000186 * np.sqrt(N_cm3 / (sp.me_over_m0 * sp.Ks))  
-    regime_class = (c.k * c.T / c.q) / Eoo
+    Eoo = (c.q * (c.h_eV / (2* np.pi)) / 2) * np.sqrt(N_cm3 / (sp.me_over_m0 * sp.Ks))  
+    regime_class = (c.k_eV * c.T) / Eoo
 
     return {
         "x_m": x_m, "x_s": x_s_nm,
