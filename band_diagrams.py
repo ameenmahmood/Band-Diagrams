@@ -13,10 +13,9 @@ class Constants:
     h_eV: float = 4.135667696e-15  # [eV*s] (B15)
     h_j: float = 6.62607015e-34      # [J*s] (B15)
     #k: float    = 1.3806503e-23     # [J/K] (B16)
-    q: float    = 1.61e-19          # [C] (B17)
+    q: float    = 1.602e-19          # [C] (B17)
     k_eV: float     = 8.617333e-5        # [eV/K] (B16)
     k_j: float     = 1.380649e-23       # [J/K] (B16)
-    # q: float = 1
     T: float    = 300.0             # [K] (B18)
     p: float    = 5.95519e-09       # [ohm*cm^2]  (B19 in sheet used later as a prefactor)
     eps0: float = 8.854e-14         # [F/cm] (B21)
@@ -24,7 +23,7 @@ class Constants:
     Ki: float = 8.0               # interface dielectric constant [unitless] (A11)
     Nss: float = 1.0e12           # [#/(eV*cm^2)]  (B13)
     mass_e: float = 9.10938356e-31  # electron mass [kg]
-    Vt = k_j * T / q  # Thermal voltage [eV] at temperature T
+    Vt = k_eV * T  # Thermal voltage [eV] at temperature T
 # Create an instance of Constants for easy access
 c = Constants()
 
@@ -229,7 +228,6 @@ def intrinsic_ni(Eg_eV: float, Nc: float, Nv: float) -> float:
     """Intrinsic carrier concentration [cm^-3] using Eg (eV), Nc, Nv at the same T."""
     return (Nc * Nv) ** 0.5 * np.exp(-Eg_eV / (2 * c.Vt))
 
-
 # --- Semiconductor work functions ---
 def semiconductor_work_function_intrinsic(chi_eV: float, Eg_eV: float, Nc: float, Nv: float) -> float:
     """
@@ -335,11 +333,13 @@ def compute_msj_doped_with_bending(
 
     # Metal-side axis (still flat)
     x_m = np.linspace(-Lm_nm, 0.0, max(2, npts // 2))
-    W_nm = W_cm * 1e7  # cm -> nm
+    W_nm = W_cm * 1e7 # cm -> nm
     
     # contact resistance
-    Eoo = (c.q * (c.h_eV / (2* np.pi)) / 2) * np.sqrt(N_cm3 / (sp.me_over_m0 * sp.Ks))  
-    regime_class = (c.k_eV * c.T) / Eoo
+    h_bj = c.h_j / (2 * np.pi)  # reduced Planck's constant [eV*s]
+    # 10^6 to convert cm^-3 to m^-3, 100 to convert F/cm to F/m
+    Eoo =  (c.q *h_bj / 2) * np.sqrt((10**6) / (c.mass_e * c.eps0 * 100)) * np.sqrt(N_cm3 / (sp.me_over_m0 * sp.Ks))  
+    regime_class = (c.k_j * c.T) / (Eoo) 
 
     return {
         "x_m": x_m, "x_s": x_s_nm,
