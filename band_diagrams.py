@@ -23,7 +23,7 @@ class Constants:
     Ki: float = 8.0               # interface dielectric constant [unitless] (A11)
     Nss: float = 1.0e12           # [#/(eV*cm^2)]  (B13)
     mass_e: float = 9.10938356e-31  # electron mass [kg]
-    Vt = k_eV * T  # Thermal voltage [eV] at temperature T
+    Vt = k_j * T / q  # Thermal voltage at temperature T
 # Create an instance of Constants for easy access
 c = Constants()
 
@@ -140,7 +140,8 @@ def effective_dos(mstar_over_m0: float, T: float) -> float:
     Nc or Nv [cm^-3] using:
         N = 2.51e19 * (mT/300)^1.5
     """
-    val_m3 = (2 * ((2* np.pi * c.mass_e * c.k_j * c.T)/(c.h_j)**2)**1.5) * (mstar_over_m0 * T / 300.0) ** 1.5
+    #val_m3 = (2 * ((2* np.pi * c.mass_e * c.k_j * c.T)/(c.h_j)**2)**1.5) * (mstar_over_m0 * T / 300.0) ** 1.5
+    val_m3 = 2.51e19 * (mstar_over_m0 * T / 300.0) ** 1.5
     return float(val_m3)   # cm^-3
 
 # material effective densities of states
@@ -151,7 +152,7 @@ def material_effective_densities(mat: MaterialProps, T: float) -> tuple[float, f
     return Nc, Nv
 
 # intrinsic levels bands 
-def intrinsic_levels(chi_eV: float, Eg_eV: float, Nc: float, Nv: float) -> Tuple[float, float, float]:
+def intrinsic_levels(chi_eV: float, Eg_eV: float, Nc: float, Nv: float) -> Tuple[float, float, float, float]:
     """
     Semiconductor band edges and intrinsic EF relative to vacuum.
     Vacuum is 0 eV. Ec = -chi; Ev = Ec - Eg; Ei above Ev by midgap + ln(Nv/Nc) term.
@@ -159,9 +160,10 @@ def intrinsic_levels(chi_eV: float, Eg_eV: float, Nc: float, Nv: float) -> Tuple
     Ec = -chi_eV
     Ev = Ec - Eg_eV
     # intrinsic level formula: Ei = (Ec + Ev)/2 + (kT/2q) * ln(Nv/Nc)
-    Ei_offset = (c.k_eV * c.T * 0.5) * np.log(max(Nv, 1e-300)/max(Nc, 1e-300))
+    Ei_offset = ((c.k_j * c.T * 0.5) / c.q) * np.log(max(Nv, 1e-300)/max(Nc, 1e-300))
     Ei = (Ec + Ev)/2 + Ei_offset
-    return Ec, Ev, Ei
+    phi_S = -Ei
+    return Ec, Ev, Ei, phi_S
 
 def _depletion_profile(
     Ks: float,
@@ -229,13 +231,6 @@ def intrinsic_ni(Eg_eV: float, Nc: float, Nv: float) -> float:
     return (Nc * Nv) ** 0.5 * np.exp(-Eg_eV / (2 * c.Vt))
 
 # --- Semiconductor work functions ---
-def semiconductor_work_function_intrinsic(chi_eV: float, Eg_eV: float, Nc: float, Nv: float) -> float:
-    """
-    Phi_S(int) = chi + Eg/2 - (kT/2q) * ln(Nc/Nv)
-    """
-    correction = (c.k_eV * c.T / (2.0)) * np.log(max(Nv,1e-300)/max(Nc,1e-300))
-    return chi_eV + 0.5 * Eg_eV - correction
-
 def semiconductor_work_function_doped(
     chi_eV: float, Eg_eV: float, dop_type: str, N_cm3: float,
     Nc: float | None = None, Nv: float | None = None,
@@ -253,17 +248,18 @@ def semiconductor_work_function_doped(
         Nv = effective_dos(mp_over_m0, c.T)
 
     # Thermal voltage
-    Ec, Ev, Ei = intrinsic_levels(chi_eV, Eg_eV, Nc=Nc, Nv=Nv)
+    Ec, Ev, Ei, _ = intrinsic_levels(chi_eV, Eg_eV, Nc=Nc, Nv=Nv)
     ni = intrinsic_ni(Eg_eV, Nc, Nv)
 
     if dop_type.lower().startswith("n"):
         # fermi level shift for n-type doping
-        dE = c.Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))      # EF - Ei
+        dE = c.Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))      
     else:
         # fermi level shift for p-type doping
-        dE = -c.Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))     # EF - Ei
+        dE = -c.Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))     
 
     EF = Ei + dE
+    print(f"Ei = {Ei:.3f} eV, dE = {dE:.3f} eV, EF = {EF:.3f} eV for N = {N_cm3:.2e} cm^-3")
     Phi_S = -EF
     return Phi_S, Ec, Ev, Ei
 
@@ -306,6 +302,7 @@ def compute_msj_doped_with_bending(
 
     # Ideal barrier(s)
     phiBn = phi_M - sp.chi_eV                 # n-type electron barrier
+    print(f"Ideal phi_Bn = {phiBn:.3f} = {phi_M} - {sp.chi_eV} eV for N = {N_cm3:.2e} cm^-3")
     phiBp = sp.Eg_eV - phiBn                  # p-type hole barrier (Eg - phiBn)
  
     # Built-in potential (depletion approx)
@@ -376,13 +373,11 @@ def compute_msj_intrinsic(
     Nc_S, Nv_S = material_effective_densities(sp, c.T)
 
     # use those values in the intrinsic level calculation
-    Ec_S, Ev_S, Ei_S = intrinsic_levels(sp.chi_eV, sp.Eg_eV, Nc=Nc_S, Nv=Nv_S)
-
-    # compute the intrinsic semiconductor work function
-    phi_S = semiconductor_work_function_intrinsic(sp.chi_eV, sp.Eg_eV, Nc_S, Nv_S)
+    Ec_S, Ev_S, Ei_S, phi_S = intrinsic_levels(sp.chi_eV, sp.Eg_eV, Nc=Nc_S, Nv=Nv_S)
 
     # Align Fermi levels: Delta = phi_S - phi_M
     Delta = phi_S - phi_M
+    print(f"Delta = {Delta} = {phi_S} - {phi_M} eV with Ei = {Ei_S} eV for intrinsic {semi.value}")
 
     # Shift semiconductor energies so semiconductor EF aligns to metal EF
     Ec_S_aligned = Ec_S + Delta
@@ -394,14 +389,11 @@ def compute_msj_intrinsic(
     x_m = np.linspace(-Lm_nm, 0.0, npts//2)
     x_s = np.linspace(0.0,  Ls_nm, npts//2)
 
-    # Ideal Schottky-Mott n-type barrier (informational)
-    phi_Bn_ideal = phi_M - sp.chi_eV
-
     return {
         "x_m": x_m, "x_s": x_s,
         "E0_M": E0_M, "EF_M": EF_M,
         "E0_S": E0_S, "Ec_S": Ec_S_aligned, "Ev_S": Ev_S_aligned, "Ei_S": Ei_S_aligned,
-        "phi_M": phi_M, "phi_S": phi_S, "Delta": Delta, "phi_Bn_ideal": phi_Bn_ideal,
+        "phi_M": phi_M, "phi_S": phi_S, "Delta": Delta,
         "metal": metal, "semi": semi,
     }
 
