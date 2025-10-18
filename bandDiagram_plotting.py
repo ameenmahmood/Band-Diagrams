@@ -1,4 +1,4 @@
-# plot_msj_intrinsic.py
+# plotting band_diagrams.py
 import numpy as np
 import plotly.graph_objects as go
 
@@ -21,11 +21,11 @@ SETTINGS = {
     "doping_scale": "log",      # "log" or "lin"
     "doping_min_cm3": 1e13,     # range start
     "doping_max_cm3": 1e20,     # range end
-    "doping_points": 20,        # number of points for the sweep
+    "doping_points": 30,        # number of points for the sweep
 
     # Which plots to show
     "show_intrinsic_plot": False,
-    "show_overlay_plot":  False, # overlay Ec/Ev for three sample dopings
+    "show_overlay_plot":  True, # overlay Ec/Ev for three sample dopings
     "overlay_dopings_cm3": (1e16, 1e18), # doping values to overlay
     "show_delta_vs_doping": True,
 
@@ -36,7 +36,6 @@ SETTINGS = {
     "delta_vs_doping_metrics": [
     "W_nm",
     "regime_class",  
-    
     ],
     
     # labeling for delta vs doping (optional)
@@ -46,7 +45,7 @@ SETTINGS = {
     "phi_Bn_corr": "φ_Bn (corrected, eV)",
     "phi_Bn_ideal": "φ_Bn (ideal, eV)",
     "W_nm": "Depletion width",
-    
+    "regime_class" : "Regime class",
     },
 
     # geometry/resolution
@@ -184,7 +183,6 @@ def make_msj_band_diagram_intrinsic(
     E0_M = data["E0_M"]; EF_M = data["EF_M"]
     E0_S = data["E0_S"]; Ec = data["Ec_S"]; Ev = data["Ev_S"]; Ei = data["Ei_S"]
     phi_M = data["phi_M"]; phi_S = data["phi_S"]; Delta = data["Delta"]
-    phi_Bn_ideal = data["phi_Bn_ideal"]
     metal = data["metal"]; semi = data["semi"]
 
     # Create a new figure for the band diagram
@@ -245,8 +243,7 @@ def make_msj_band_diagram_intrinsic(
                 x=0, y=-.12, xref="paper", yref="paper",
                 text=(f"Phi_M = {phi_M:.2f} eV, "
                     f"Phi_S ≈ {phi_S:.2f} eV, "
-                    f"Delta = Phi_S - Phi_M = {Delta:.2f} eV<br>"
-                    f"Phi_Bn (ideal) = Phi_M - chi = {phi_Bn_ideal:.2f} eV"),
+                    f"Delta = Phi_S - Phi_M = {Delta:.2f} eV<br>"),
                 showarrow=False, font=dict(size=fs.get("anno", 12)), align="left"
             )
         ]
