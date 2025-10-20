@@ -24,9 +24,9 @@ SETTINGS = {
     "doping_points": 30,        # number of points for the sweep
 
     # Which plots to show
-    "show_intrinsic_plot": False,
+    "show_intrinsic_plot": True,
     "show_overlay_plot":  True, # overlay Ec/Ev for three sample dopings
-    "overlay_dopings_cm3": (1e16, 1e18), # doping values to overlay
+    "overlay_dopings_cm3": (1e14, 1e18), # doping values to overlay
     "show_delta_vs_doping": True,
 
     # Band bending
@@ -54,7 +54,7 @@ SETTINGS = {
     "npts": 600, # total points (metal + semiconductor)
     
     # show legend 
-    "show_legend": True,
+    "show_legend": False,
     
     # font size
     "font_sizes": {
@@ -246,7 +246,7 @@ def make_msj_band_diagram_intrinsic(
                     f"Delta = Phi_S - Phi_M = {Delta:.2f} eV<br>"),
                 showarrow=False, font=dict(size=fs.get("anno", 12)), align="left"
             )
-        ]
+        ] 
     )
     return fig
 
