@@ -259,7 +259,6 @@ def semiconductor_work_function_doped(
         dE = -c.Vt * np.log(max(N_cm3, 1e-300) / max(ni, 1e-300))     
 
     EF = Ei + dE
-    print(f"Ei = {Ei:.3f} eV, dE = {dE:.3f} eV, EF = {EF:.3f} eV for N = {N_cm3:.2e} cm^-3")
     Phi_S = -EF
     return Phi_S, Ec, Ev, Ei
 
@@ -302,7 +301,6 @@ def compute_msj_doped_with_bending(
 
     # Ideal barrier(s)
     phiBn = phi_M - sp.chi_eV                 # n-type electron barrier
-    print(f"Ideal phi_Bn = {phiBn:.3f} = {phi_M} - {sp.chi_eV} eV for N = {N_cm3:.2e} cm^-3")
     phiBp = sp.Eg_eV - phiBn                  # p-type hole barrier (Eg - phiBn)
  
     # Built-in potential (depletion approx)
@@ -336,8 +334,8 @@ def compute_msj_doped_with_bending(
     h_bj = c.h_j / (2 * np.pi)  # reduced Planck's constant [eV*s]
     # 10^6 to convert cm^-3 to m^-3, 100 to convert F/cm to F/m
     Eoo =  (c.q *h_bj / 2) * np.sqrt((10**6) / (c.mass_e * c.eps0 * 100)) * np.sqrt(N_cm3 / (sp.me_over_m0 * sp.Ks))  
-    regime_class = (c.k_j * c.T) / (Eoo) 
-
+    regime_class = (c.k_j * c.T) / (Eoo)
+    
     return {
         "x_m": x_m, "x_s": x_s_nm,
         "E0_M": E0_M, "EF_M": EF_M,
@@ -377,7 +375,6 @@ def compute_msj_intrinsic(
 
     # Align Fermi levels: Delta = phi_S - phi_M
     Delta = phi_S - phi_M
-    print(f"Delta = {Delta} = {phi_S} - {phi_M} eV with Ei = {Ei_S} eV for intrinsic {semi.value}")
 
     # Shift semiconductor energies so semiconductor EF aligns to metal EF
     Ec_S_aligned = Ec_S + Delta
