@@ -1,4 +1,3 @@
-import os
 import numpy as np
 from dataclasses import dataclass
 from enum import Enum
@@ -262,7 +261,6 @@ def semiconductor_work_function_doped(
     Phi_S = -EF
     return Phi_S, Ec, Ev, Ei
 
-
 # --- Junction computation functions ---
 def compute_msj_doped_with_bending(
     metal: Metal,
@@ -322,9 +320,11 @@ def compute_msj_doped_with_bending(
     phiBp_corr = sp.Eg_eV - phiBn_corr
 
     # Bend bands with Ec(x) = Ec0 - psi(x), etc. (psi in V; energies in eV)
-    Ec_x = Ec0 - psi_x
-    Ev_x = Ev0 - psi_x
-    Ei_x = Ei0 - psi_x
+    s = +1 if dop_type.lower().startswith("n") else -1  # n: bend up at surface; p: bend down
+
+    Ec_x = Ec0 - s * psi_x
+    Ev_x = Ev0 - s * psi_x
+    Ei_x = Ei0 - s * psi_x
 
     # Metal-side axis (still flat)
     x_m = np.linspace(-Lm_nm, 0.0, max(2, npts // 2))
@@ -440,7 +440,7 @@ def compute_msj_doped(
         "metal": metal, "semi": semi, "dop_type": dop_type, "N_cm3": N_cm3
     }
 
-
+"""
 # --- Sweeps / Analysis helpers ---
 def sweep_doping(
     Ns_cm3: list[float],
@@ -464,7 +464,7 @@ def sweep_doping(
             "Ev_bulk_eV": d["Ev_S"],
         })
     return pd.DataFrame(rows)
-
+"""
 
 
 
